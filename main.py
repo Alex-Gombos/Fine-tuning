@@ -8,51 +8,10 @@ from transformers import AutoModelForTokenClassification
 import json
 import torch
 
-class IMDbDataset(torch.utils.data.Dataset):
-    def __init__(self, encodings, labels):
-        self.encodings = encodings
-        self.labels = labels
-
-    def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['labels'] = torch.tensor(self.labels[idx])
-        return item
-
-    def __len__(self):
-        return len(self.labels)
-    
 print(torch.cuda.memory_summary(device=None, abbreviated=False))
-
-ronec = datasets.load_dataset("ronec")
-
-ronec
-
-ronec.shape
-
-ronec["train"][0]
-
-ronec["train"].features["ner_tags"]
-
-ronec['train'].description
 
 tokenizer = BertTokenizerFast.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", do_lower_case=True,model_max_length=512)
 
-example_text = ronec['train'][0]
-
-tokenized_input = tokenizer(example_text["tokens"], is_split_into_words=True)
-
-tokens = tokenizer.convert_ids_to_tokens(tokenized_input["input_ids"])
-
-word_ids = tokenized_input.word_ids()
-
-print(word_ids)
-
-''' As we can see, it returns a list with the same number of elements as our processed input ids, mapping special tokens to None and all other tokens to their respective word. This way, we can align the labels with the processed input ids. '''
-
-tokenized_input
-
-len(example_text['ner_tags']), len(tokenized_input["input_ids"])
-# (9, 11)
 with open('output.txt', 'r') as f:
     data = json.load(f)
 
@@ -91,12 +50,6 @@ def tokenize_and_align_labels(examples, label_all_tokens=True):
     tokenized_inputs["labels"] = labels 
     return tokenized_inputs
 
-q = tokenize_and_align_labels(ronec['train'][4:5]) 
-print(q)
-
-for token, label in zip(tokenizer.convert_ids_to_tokens(q["input_ids"][0]),q["labels"][0]): 
-    print(f"{token:_<40} {label}")
-
 tokenized_datasets = dataset.map(tokenize_and_align_labels, batched=True)
 
 model = AutoModelForTokenClassification.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", num_labels=81)
@@ -115,11 +68,9 @@ data_collator = DataCollatorForTokenClassification(tokenizer)
 
 metric = datasets.load_metric("seqeval")
 
-example = ronec['train'][0]
+example = dataset[0]
 
-label_list = ronec["train"].features["ner_tags"].feature.names 
-
-label_list
+label_list = dataset.features["ner_tags"].feature.names 
 
 labels = [label_list[i] for i in example["ner_tags"]] 
 
