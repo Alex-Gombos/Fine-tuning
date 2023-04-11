@@ -1,0 +1,169 @@
+import datasets 
+from datasets import Dataset
+import torch
+import numpy as np 
+from transformers import BertTokenizerFast 
+from transformers import DataCollatorForTokenClassification 
+from transformers import AutoModelForTokenClassification
+import json
+import torch
+
+class IMDbDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+    
+print(torch.cuda.memory_summary(device=None, abbreviated=False))
+
+ronec = datasets.load_dataset("ronec")
+
+ronec
+
+ronec.shape
+
+ronec["train"][0]
+
+ronec["train"].features["ner_tags"]
+
+ronec['train'].description
+
+tokenizer = BertTokenizerFast.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", do_lower_case=True,model_max_length=512)
+
+example_text = ronec['train'][0]
+
+tokenized_input = tokenizer(example_text["tokens"], is_split_into_words=True)
+
+tokens = tokenizer.convert_ids_to_tokens(tokenized_input["input_ids"])
+
+word_ids = tokenized_input.word_ids()
+
+print(word_ids)
+
+''' As we can see, it returns a list with the same number of elements as our processed input ids, mapping special tokens to None and all other tokens to their respective word. This way, we can align the labels with the processed input ids. '''
+
+tokenized_input
+
+len(example_text['ner_tags']), len(tokenized_input["input_ids"])
+# (9, 11)
+with open('output.txt', 'r') as f:
+    data = json.load(f)
+
+dataset = Dataset.from_list(data)
+
+def tokenize_and_align_labels(examples, label_all_tokens=True): 
+    tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True) 
+    labels = [] 
+    for i, label in enumerate(examples["ner_ids"]): 
+        word_ids = tokenized_inputs.word_ids(batch_index=i) 
+        # word_ids() => Return a list mapping the tokens
+        # to their actual word in the initial sentence.
+        # It Returns a list indicating the word corresponding to each token. 
+        previous_word_idx = None 
+        label_ids = []
+        # Special tokens like `<s>` and `<\s>` are originally mapped to None 
+        # We need to set the label to -100 so they are automatically ignored in the loss function.
+        for word_idx in word_ids: 
+            if word_idx is None: 
+                # set –100 as the label for these special tokens
+                label_ids.append(-100)
+            # For the other tokens in a word, we set the label to either the current label or -100, depending on
+            # the label_all_tokens flag.
+            elif word_idx != previous_word_idx:
+                # if current word_idx is != prev then its the most regular case
+                # and add the corresponding token                 
+                label_ids.append(label[word_idx]) 
+            else: 
+                # to take care of sub-words which have the same word_idx
+                # set -100 as well for them, but only if label_all_tokens == False
+                label_ids.append(label[word_idx] if label_all_tokens else -100) 
+                # mask the subword representations after the first subword
+                 
+            previous_word_idx = word_idx 
+        labels.append(label_ids) 
+    tokenized_inputs["labels"] = labels 
+    return tokenized_inputs
+
+q = tokenize_and_align_labels(ronec['train'][4:5]) 
+print(q)
+
+for token, label in zip(tokenizer.convert_ids_to_tokens(q["input_ids"][0]),q["labels"][0]): 
+    print(f"{token:_<40} {label}")
+
+tokenized_datasets = dataset.map(tokenize_and_align_labels, batched=True)
+
+model = AutoModelForTokenClassification.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", num_labels=81)
+
+from transformers import TrainingArguments, Trainer 
+args = TrainingArguments( 
+"test-ner",
+evaluation_strategy = "epoch", 
+learning_rate=2e-5, 
+per_device_train_batch_size=2, 
+per_device_eval_batch_size=2, 
+num_train_epochs=1, 
+weight_decay=0.01, 
+)
+data_collator = DataCollatorForTokenClassification(tokenizer)
+
+metric = datasets.load_metric("seqeval")
+
+example = ronec['train'][0]
+
+label_list = ronec["train"].features["ner_tags"].feature.names 
+
+label_list
+
+labels = [label_list[i] for i in example["ner_tags"]] 
+
+
+metric.compute(predictions=[labels], references=[labels])
+
+def compute_metrics(eval_preds): 
+    pred_logits, labels = eval_preds 
+    
+    pred_logits = np.argmax(pred_logits, axis=2) 
+    # the logits and the probabilities are in the same order,
+    # so we don’t need to apply the softmax
+    
+    # We remove all the values where the label is -100
+    predictions = [ 
+        [label_list[eval_preds] for (eval_preds, l) in zip(prediction, label) if l != -100] 
+        for prediction, label in zip(pred_logits, labels) 
+    ] 
+    
+    true_labels = [ 
+      [label_list[l] for (eval_preds, l) in zip(prediction, label) if l != -100] 
+       for prediction, label in zip(pred_logits, labels) 
+   ] 
+    results = metric.compute(predictions=predictions, references=true_labels) 
+    return { 
+   "precision": results["overall_precision"], 
+   "recall": results["overall_recall"], 
+   "f1": results["overall_f1"], 
+  "accuracy": results["overall_accuracy"], 
+  }
+
+trainer = Trainer( 
+    model, 
+    args, 
+   train_dataset=tokenized_datasets, 
+   eval_dataset=tokenized_datasets, 
+   data_collator=data_collator, 
+   tokenizer=tokenizer, 
+   compute_metrics=compute_metrics,
+)
+print(torch.cuda.memory_summary(device=None, abbreviated=False))
+torch.cuda.empty_cache()
+print(torch.cuda.memory_summary(device=None, abbreviated=False))
+trainer.train()
+
+
+
