@@ -21,7 +21,6 @@ dataset = dataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)
 
 
 print(dataset.features["ner_tags"])
-print("deasupra")
 
 def tokenize_and_align_labels(examples, label_all_tokens=True): 
     tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True) 
