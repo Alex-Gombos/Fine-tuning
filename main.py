@@ -1,5 +1,5 @@
 import datasets 
-from datasets import Dataset
+from datasets import Dataset, ClassLabel, Sequence
 import torch
 import numpy as np 
 from transformers import BertTokenizerFast 
@@ -8,7 +8,6 @@ from transformers import AutoModelForTokenClassification
 import json
 import torch
 
-print(torch.cuda.memory_summary(device=None, abbreviated=False))
 
 tokenizer = BertTokenizerFast.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", do_lower_case=True,model_max_length=512)
 
@@ -16,6 +15,13 @@ with open('output.txt', 'r') as f:
     data = json.load(f)
 
 dataset = Dataset.from_list(data)
+
+label_names = sorted(set(label for labels in dataset["ner_tags"] for label in labels))
+dataset = dataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)))
+
+
+print(dataset.features["ner_tags"])
+print("deasupra")
 
 def tokenize_and_align_labels(examples, label_all_tokens=True): 
     tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True) 
@@ -70,7 +76,7 @@ metric = datasets.load_metric("seqeval")
 
 example = dataset[0]
 
-label_list = dataset.features["ner_tags"].feature.names 
+label_list = dataset.features["ner_tags"].feature.names
 
 labels = [label_list[i] for i in example["ner_tags"]] 
 
@@ -111,10 +117,5 @@ trainer = Trainer(
    tokenizer=tokenizer, 
    compute_metrics=compute_metrics,
 )
-print(torch.cuda.memory_summary(device=None, abbreviated=False))
 torch.cuda.empty_cache()
-print(torch.cuda.memory_summary(device=None, abbreviated=False))
 trainer.train()
-
-
-
