@@ -19,11 +19,11 @@ with open('output.txt', 'r') as f:
 dataset = Dataset.from_list(data)
 
 
-label_names = sorted(set(label for labels in dataset["ner_tags"] for label in labels))
-dataset = dataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)))
+label_names = sorted(set(label for labels in dataset["ner_ids"] for label in labels))
+dataset = dataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
 
 
-print(dataset.features["ner_tags"])
+print(dataset.features["ner_ids"])
 
 train_dataset, val_dataset = train_test_split(dataset, test_size=0.2, random_state=42)
 
@@ -38,7 +38,7 @@ print(val_datasetDataset[0])
 
 
 def tokenize_and_align_labels(examples, label_all_tokens=True): 
-    tokenized_inputs = tokenizer(examples["tokens"], truncation=True, is_split_into_words=True) 
+    tokenized_inputs = tokenizer(examples["tokens"], truncation= True, is_split_into_words=True, padding=True) 
     labels = [] 
     for i, label in enumerate(examples["ner_ids"]): 
         word_ids = tokenized_inputs.word_ids(batch_index=i) 
@@ -57,7 +57,15 @@ def tokenize_and_align_labels(examples, label_all_tokens=True):
     tokenized_inputs["labels"] = labels 
     return tokenized_inputs
 
-tokenized_datasets = dataset.map(tokenize_and_align_labels, batched=True)
+
+train_datasetDataset = train_datasetDataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
+val_datasetDataset = val_datasetDataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
+
+tokenized_train = train_datasetDataset.map(tokenize_and_align_labels, batched=True, remove_columns=['space_after', 'ner_tags', 'id', 'tokens', 'ner_ids'])
+tokenized_val = val_datasetDataset.map(tokenize_and_align_labels, batched=True, remove_columns=['space_after', 'ner_tags', 'id','tokens', 'ner_ids'])
+
+print(tokenized_train.features)
+
 
 model = AutoModelForTokenClassification.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", num_labels=3)
 
@@ -78,9 +86,9 @@ metric = datasets.load_metric("seqeval")
 
 example = dataset[0]
 
-label_list = dataset.features["ner_tags"].feature.names
+label_list = dataset.features["ner_ids"].feature.names
 
-labels = [label_list[i] for i in example["ner_tags"]] 
+labels = [label_list[i] for i in example["ner_ids"]] 
 
 
 metric.compute(predictions=[labels], references=[labels])
@@ -113,8 +121,8 @@ def compute_metrics(eval_preds):
 trainer = Trainer( 
     model, 
     args, 
-   train_dataset=train_datasetDataset, 
-   eval_dataset=val_datasetDataset, 
+   train_dataset=tokenized_train, 
+   eval_dataset=tokenized_val, 
    data_collator=data_collator, 
    tokenizer=tokenizer, 
    compute_metrics=compute_metrics,
