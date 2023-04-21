@@ -13,35 +13,33 @@ from sklearn.model_selection import train_test_split
 tokenizer = BertTokenizerFast.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", do_lower_case=True,model_max_length=512)
 
 
-with open('output.txt', 'r') as f:
+with open('outputSentence.txt', 'r') as f:
     data = json.load(f)
 
 dataset = Dataset.from_list(data)
 
 
-label_names = sorted(set(label for labels in dataset["ner_ids"] for label in labels))
-dataset = dataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
+label_names = sorted(set(label for labels in dataset["ner_tags"] for label in labels))
+dataset = dataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)))
 
 
-print(dataset.features["ner_ids"])
+# print(dataset.features["ner_ids"])
 
 train_dataset, val_dataset = train_test_split(dataset, test_size=0.2, random_state=42)
 
 train_datasetDataset = Dataset.from_dict(train_dataset)
 val_datasetDataset = Dataset.from_dict(val_dataset)
 
-print(len(train_datasetDataset))
-print(train_datasetDataset[0])
-
-print(len(val_datasetDataset))
-print(val_datasetDataset[0])
 
 
 def tokenize_and_align_labels(examples, label_all_tokens=True): 
-    tokenized_inputs = tokenizer(examples["tokens"], truncation= True, is_split_into_words=True, padding=True) 
+    tokenized_inputs = tokenizer(examples["tokens"], truncation= True, is_split_into_words=True) 
     labels = [] 
-    for i, label in enumerate(examples["ner_ids"]): 
+    for i, label in enumerate(examples["ner_tags"]): 
         word_ids = tokenized_inputs.word_ids(batch_index=i) 
+        # print(f"word_ids={word_ids}")
+        # print(f"label={label}")
+        # print(examples["tokens"][0])
         previous_word_idx = None 
         label_ids = []
         for word_idx in word_ids: 
@@ -58,16 +56,19 @@ def tokenize_and_align_labels(examples, label_all_tokens=True):
     return tokenized_inputs
 
 
-train_datasetDataset = train_datasetDataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
-val_datasetDataset = val_datasetDataset.cast_column("ner_ids", Sequence(ClassLabel(names=label_names)))
+train_datasetDataset = train_datasetDataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)))
+val_datasetDataset = val_datasetDataset.cast_column("ner_tags", Sequence(ClassLabel(names=label_names)))
 
 tokenized_train = train_datasetDataset.map(tokenize_and_align_labels, batched=True, remove_columns=['space_after', 'ner_tags', 'id', 'tokens', 'ner_ids'])
 tokenized_val = val_datasetDataset.map(tokenize_and_align_labels, batched=True, remove_columns=['space_after', 'ner_tags', 'id','tokens', 'ner_ids'])
 
-print(tokenized_train.features)
+# print(tokenized_train.features)
 
 
 model = AutoModelForTokenClassification.from_pretrained("dumitrescustefan/bert-base-romanian-uncased-v1", num_labels=3)
+
+# print(model)
+
 
 from transformers import TrainingArguments, Trainer 
 args = TrainingArguments( 
@@ -86,9 +87,9 @@ metric = datasets.load_metric("seqeval")
 
 example = dataset[0]
 
-label_list = dataset.features["ner_ids"].feature.names
+label_list = dataset.features["ner_tags"].feature.names
 
-labels = [label_list[i] for i in example["ner_ids"]] 
+labels = [label_list[i] for i in example["ner_tags"]] 
 
 
 metric.compute(predictions=[labels], references=[labels])
@@ -129,3 +130,4 @@ trainer = Trainer(
 )
 torch.cuda.empty_cache()
 trainer.train()
+model.save_pretrained(r"D:\licenta\trained")
