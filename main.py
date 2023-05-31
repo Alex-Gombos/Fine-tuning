@@ -127,4 +127,4 @@ trainer = Trainer(
 )
 torch.cuda.empty_cache()
 trainer.train()
-model.save_pretrained(r"D:\Alex\Licenta\model")
+model.save_pretrained(r"D:\Alex\Licenta\model") # change to relative path
